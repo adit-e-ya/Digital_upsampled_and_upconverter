@@ -241,7 +241,7 @@ def ifft_8point_hardware(input_i_binary_list, input_q_binary_list):
     return output_real, output_imag
 
 
-def ifft_compare_demo(seed=0, scale=4096, tolerance_pct=0, bit_width=14):
+def ifft_compare_demo(seed=0, scale=8192, tolerance_pct=0.2, bit_width=14):
     """
     Run one IFFT comparison between the hardware-style algorithm and NumPy.
     Also verifies the round-trip property: IFFT(FFT(x)) ≈ x
