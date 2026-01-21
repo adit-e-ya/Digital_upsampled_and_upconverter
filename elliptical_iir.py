@@ -1,6 +1,9 @@
 import numpy as np
 from scipy import signal
 
+# Constant for numerical stability in log calculations
+EPSILON = 1e-10
+
 
 class FixedElliptical:
     """
@@ -52,6 +55,9 @@ class FixedElliptical:
         # Convert to fixed-point coefficients
         self.sos_fixed = self._convert_to_fixed_point(self.sos_float)
         
+        # Pre-compute coefficient scale factor for performance
+        self.coeff_scale = 2 ** (self.filter_bits - 1)
+        
         # Initialize state variables for each section
         # Each section has 2 state variables (for the 2 delays in biquad)
         self.num_sections = self.sos_fixed.shape[0]
@@ -78,8 +84,8 @@ class FixedElliptical:
         ndarray
             Fixed-point SOS coefficients (integer representation)
         """
-        # Scale factor for filter coefficients
-        scale_factor = 2 ** (self.filter_bits - 1) - 1
+        # Scale factor for filter coefficients (use full range for better precision)
+        scale_factor = 2 ** (self.filter_bits - 1)
         
         # Convert to fixed-point
         sos_fixed = np.round(sos_float * scale_factor).astype(np.int64)
@@ -111,19 +117,16 @@ class FixedElliptical:
         z1, z2 = states
         
         # Biquad filter implementation using Direct Form II
-        # Scale factor for coefficients
-        coeff_scale = 2 ** (self.filter_bits - 1) - 1
-        
         # Compute output
-        # y[n] = b0*x[n] + z1
-        y = (b0 * x + z1 * coeff_scale) // coeff_scale
+        # y[n] = b0*x[n] / scale + z1
+        y = (b0 * x) // self.coeff_scale + z1
         
         # Update states
-        # z1[n+1] = b1*x[n] - a1*y[n] + z2
-        new_z1 = (b1 * x - a1 * y + z2 * coeff_scale) // coeff_scale
+        # z1[n+1] = b1*x[n] - a1*y[n] / scale + z2
+        new_z1 = (b1 * x - a1 * y) // self.coeff_scale + z2
         
-        # z2[n+1] = b2*x[n] - a2*y[n]
-        new_z2 = (b2 * x - a2 * y) // coeff_scale
+        # z2[n+1] = b2*x[n] - a2*y[n] / scale
+        new_z2 = (b2 * x - a2 * y) // self.coeff_scale
         
         # Update states
         states[0] = new_z1
@@ -236,7 +239,7 @@ class FixedElliptical:
             (frequencies, magnitude, phase) - Frequency response data
         """
         w, h = signal.sosfreqz(self.sos_float, worN=worN, fs=self.fs)
-        magnitude = 20 * np.log10(np.abs(h) + 1e-10)
+        magnitude = 20 * np.log10(np.abs(h) + EPSILON)
         phase = np.angle(h)
         
         return w, magnitude, phase
