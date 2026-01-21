@@ -21,6 +21,10 @@ def half_round_up(value):
     For positive numbers: rounds to next higher integer if fractional part >= 0.5
     For negative numbers: rounds towards zero if fractional part is -0.5 or greater
     
+    Note: This function documents the hardware rounding behavior. The actual
+    rounding in approx_0_7071() is implemented using bit manipulation for
+    efficiency, but follows this same logic.
+    
     Parameters:
     -----------
     value : float
@@ -387,8 +391,8 @@ def validate_fft(input_binary_list, tolerance=0.1):
     # Get reference FFT result
     ref_result = fft_8point_reference(x)
     
-    # Calculate total energy for threshold
-    total_energy = sum(abs(r)**2 for r in ref_result)
+    # Calculate total energy for threshold using consistent method
+    total_energy = sum(np.abs(r)**2 for r in ref_result)
     threshold = np.sqrt(total_energy) * 0.01  # 1% of total energy
     
     print("\n=== FFT Validation ===")
@@ -402,8 +406,8 @@ def validate_fft(input_binary_list, tolerance=0.1):
         ref_real = ref_result[i].real
         ref_imag = ref_result[i].imag
         
-        # Calculate error
-        hw_mag = np.sqrt(hw_real**2 + hw_imag**2)
+        # Calculate magnitudes using consistent method (np.abs for both)
+        hw_mag = np.abs(complex(hw_real, hw_imag))
         ref_mag = np.abs(ref_result[i])
         
         # For bins with significant energy, check relative error
