@@ -70,81 +70,165 @@ def visualize_filter(save_path='filter_visualization.png'):
     
     filtered_i, filtered_q = filt.process(upsampled_i, upsampled_q)
     
-    # Get frequency response
-    print("Computing frequency response...")
+    # Get frequency response of filter
+    print("Computing filter frequency response...")
     w, mag, phase = filt.get_frequency_response(worN=512)
+    
+    # Compute FFT of input and output signals
+    print("Computing signal frequency spectra...")
+    n_fft = len(upsampled_i)
+    freq = np.fft.fftfreq(n_fft, d=1.0/filt.fs)
+    freq_positive = freq[:n_fft//2]
+    
+    # Input signal FFT (I channel)
+    input_fft_i = np.fft.fft(upsampled_i)
+    input_mag_i = 20 * np.log10(np.abs(input_fft_i[:n_fft//2]) + 1e-10)
+    
+    # Output signal FFT (I channel)
+    output_fft_i = np.fft.fft(filtered_i)
+    output_mag_i = 20 * np.log10(np.abs(output_fft_i[:n_fft//2]) + 1e-10)
+    
+    # Input signal FFT (Q channel)
+    input_fft_q = np.fft.fft(upsampled_q)
+    input_mag_q = 20 * np.log10(np.abs(input_fft_q[:n_fft//2]) + 1e-10)
+    
+    # Output signal FFT (Q channel)
+    output_fft_q = np.fft.fft(filtered_q)
+    output_mag_q = 20 * np.log10(np.abs(output_fft_q[:n_fft//2]) + 1e-10)
     
     # Create visualization
     print("Creating visualization...")
-    fig = plt.figure(figsize=(14, 10))
+    fig = plt.figure(figsize=(18, 12))
     
-    # 1. Input Signal (I channel)
-    ax1 = plt.subplot(3, 2, 1)
+    # Create visualization
+    print("Creating visualization...")
+    fig = plt.figure(figsize=(18, 12))
+    
+    # 1. Input Signal (I channel) - Time Domain
+    ax1 = plt.subplot(4, 3, 1)
     ax1.plot(upsampled_i[:100], 'b-', linewidth=1.5)
-    ax1.set_title('Input Signal (I Channel)', fontsize=12, fontweight='bold')
+    ax1.set_title('Input Signal (I Channel)', fontsize=11, fontweight='bold')
     ax1.set_xlabel('Sample Index')
     ax1.set_ylabel('Amplitude')
     ax1.grid(True, alpha=0.3)
     ax1.set_xlim(0, 100)
     
-    # 2. Output Signal (I channel)
-    ax2 = plt.subplot(3, 2, 2)
-    ax2.plot(filtered_i[:100], 'r-', linewidth=1.5)
-    ax2.set_title('Output Signal (I Channel)', fontsize=12, fontweight='bold')
-    ax2.set_xlabel('Sample Index')
-    ax2.set_ylabel('Amplitude')
+    # 2. Input Signal (I channel) - Frequency Domain
+    ax2 = plt.subplot(4, 3, 2)
+    ax2.plot(freq_positive, input_mag_i, 'b-', linewidth=1.5)
+    ax2.set_title('Input Spectrum (I Channel)', fontsize=11, fontweight='bold')
+    ax2.set_xlabel('Frequency (normalized)')
+    ax2.set_ylabel('Magnitude (dB)')
     ax2.grid(True, alpha=0.3)
-    ax2.set_xlim(0, 100)
+    ax2.set_xlim(0, filt.fs/2)
     
-    # 3. Input vs Output Comparison (I channel)
-    ax3 = plt.subplot(3, 2, 3)
+    # 3. Input vs Output Comparison (I channel) - Time Domain
+    ax3 = plt.subplot(4, 3, 3)
     ax3.plot(upsampled_i[:100], 'b-', alpha=0.7, linewidth=1.5, label='Input')
     ax3.plot(filtered_i[:100], 'r-', alpha=0.7, linewidth=1.5, label='Output')
-    ax3.set_title('Input vs Output Comparison (I Channel)', fontsize=12, fontweight='bold')
+    ax3.set_title('I Channel Comparison (Time)', fontsize=11, fontweight='bold')
     ax3.set_xlabel('Sample Index')
     ax3.set_ylabel('Amplitude')
-    ax3.legend(loc='upper right')
+    ax3.legend(loc='upper right', fontsize=8)
     ax3.grid(True, alpha=0.3)
     ax3.set_xlim(0, 100)
     
-    # 4. Q Channel Comparison
-    ax4 = plt.subplot(3, 2, 4)
-    ax4.plot(upsampled_q[:100], 'b-', alpha=0.7, linewidth=1.5, label='Input')
-    ax4.plot(filtered_q[:100], 'r-', alpha=0.7, linewidth=1.5, label='Output')
-    ax4.set_title('Input vs Output Comparison (Q Channel)', fontsize=12, fontweight='bold')
+    # 4. Output Signal (I channel) - Time Domain
+    ax4 = plt.subplot(4, 3, 4)
+    ax4.plot(filtered_i[:100], 'r-', linewidth=1.5)
+    ax4.set_title('Output Signal (I Channel)', fontsize=11, fontweight='bold')
     ax4.set_xlabel('Sample Index')
     ax4.set_ylabel('Amplitude')
-    ax4.legend(loc='upper right')
     ax4.grid(True, alpha=0.3)
     ax4.set_xlim(0, 100)
     
-    # 5. Magnitude Response
-    ax5 = plt.subplot(3, 2, 5)
-    ax5.plot(w, mag, 'g-', linewidth=2)
-    ax5.axvline(filt.wp, color='orange', linestyle='--', linewidth=1.5, label=f'Cutoff (Wp={filt.wp})')
-    ax5.axhline(-0.1, color='red', linestyle=':', linewidth=1, alpha=0.5, label='Passband Ripple (±0.1 dB)')
-    ax5.axhline(-100, color='purple', linestyle=':', linewidth=1, alpha=0.5, label='Stopband Atten (100 dB)')
-    ax5.set_title('Magnitude Response', fontsize=12, fontweight='bold')
+    # 5. Output Signal (I channel) - Frequency Domain
+    ax5 = plt.subplot(4, 3, 5)
+    ax5.plot(freq_positive, output_mag_i, 'r-', linewidth=1.5)
+    ax5.set_title('Output Spectrum (I Channel)', fontsize=11, fontweight='bold')
     ax5.set_xlabel('Frequency (normalized)')
     ax5.set_ylabel('Magnitude (dB)')
     ax5.grid(True, alpha=0.3)
-    ax5.legend(loc='upper right', fontsize=8)
-    ax5.set_ylim(-120, 5)
+    ax5.set_xlim(0, filt.fs/2)
     
-    # 6. Phase Response
-    ax6 = plt.subplot(3, 2, 6)
-    ax6.plot(w, np.degrees(phase), 'm-', linewidth=2)
-    ax6.axvline(filt.wp, color='orange', linestyle='--', linewidth=1.5, label=f'Cutoff (Wp={filt.wp})')
-    ax6.set_title('Phase Response', fontsize=12, fontweight='bold')
+    # 6. Input vs Output Comparison (I channel) - Frequency Domain
+    ax6 = plt.subplot(4, 3, 6)
+    ax6.plot(freq_positive, input_mag_i, 'b-', alpha=0.7, linewidth=1.5, label='Input')
+    ax6.plot(freq_positive, output_mag_i, 'r-', alpha=0.7, linewidth=1.5, label='Output')
+    ax6.set_title('I Channel Comparison (Freq)', fontsize=11, fontweight='bold')
     ax6.set_xlabel('Frequency (normalized)')
-    ax6.set_ylabel('Phase (degrees)')
-    ax6.grid(True, alpha=0.3)
+    ax6.set_ylabel('Magnitude (dB)')
     ax6.legend(loc='upper right', fontsize=8)
+    ax6.grid(True, alpha=0.3)
+    ax6.set_xlim(0, filt.fs/2)
+    
+    # 7. Input Signal (Q channel) - Time Domain
+    ax7 = plt.subplot(4, 3, 7)
+    ax7.plot(upsampled_q[:100], 'b-', linewidth=1.5)
+    ax7.set_title('Input Signal (Q Channel)', fontsize=11, fontweight='bold')
+    ax7.set_xlabel('Sample Index')
+    ax7.set_ylabel('Amplitude')
+    ax7.grid(True, alpha=0.3)
+    ax7.set_xlim(0, 100)
+    
+    # 8. Input Signal (Q channel) - Frequency Domain
+    ax8 = plt.subplot(4, 3, 8)
+    ax8.plot(freq_positive, input_mag_q, 'b-', linewidth=1.5)
+    ax8.set_title('Input Spectrum (Q Channel)', fontsize=11, fontweight='bold')
+    ax8.set_xlabel('Frequency (normalized)')
+    ax8.set_ylabel('Magnitude (dB)')
+    ax8.grid(True, alpha=0.3)
+    ax8.set_xlim(0, filt.fs/2)
+    
+    # 9. Input vs Output Comparison (Q channel) - Time Domain
+    ax9 = plt.subplot(4, 3, 9)
+    ax9.plot(upsampled_q[:100], 'b-', alpha=0.7, linewidth=1.5, label='Input')
+    ax9.plot(filtered_q[:100], 'r-', alpha=0.7, linewidth=1.5, label='Output')
+    ax9.set_title('Q Channel Comparison (Time)', fontsize=11, fontweight='bold')
+    ax9.set_xlabel('Sample Index')
+    ax9.set_ylabel('Amplitude')
+    ax9.legend(loc='upper right', fontsize=8)
+    ax9.grid(True, alpha=0.3)
+    ax9.set_xlim(0, 100)
+    
+    # 10. Filter Magnitude Response
+    ax10 = plt.subplot(4, 3, 10)
+    ax10.plot(w, mag, 'g-', linewidth=2)
+    ax10.axvline(filt.wp, color='orange', linestyle='--', linewidth=1.5, label=f'Cutoff (Wp={filt.wp})')
+    ax10.axhline(-0.1, color='red', linestyle=':', linewidth=1, alpha=0.5, label='Passband Ripple (±0.1 dB)')
+    ax10.axhline(-100, color='purple', linestyle=':', linewidth=1, alpha=0.5, label='Stopband Atten (100 dB)')
+    ax10.set_title('Filter Magnitude Response', fontsize=11, fontweight='bold')
+    ax10.set_xlabel('Frequency (normalized)')
+    ax10.set_ylabel('Magnitude (dB)')
+    ax10.grid(True, alpha=0.3)
+    ax10.legend(loc='upper right', fontsize=7)
+    ax10.set_ylim(-120, 5)
+    
+    # 11. Filter Phase Response
+    ax11 = plt.subplot(4, 3, 11)
+    ax11.plot(w, np.degrees(phase), 'm-', linewidth=2)
+    ax11.axvline(filt.wp, color='orange', linestyle='--', linewidth=1.5, label=f'Cutoff (Wp={filt.wp})')
+    ax11.set_title('Filter Phase Response', fontsize=11, fontweight='bold')
+    ax11.set_xlabel('Frequency (normalized)')
+    ax11.set_ylabel('Phase (degrees)')
+    ax11.grid(True, alpha=0.3)
+    ax11.legend(loc='upper right', fontsize=8)
+    
+    # 12. Q Channel Frequency Comparison
+    ax12 = plt.subplot(4, 3, 12)
+    ax12.plot(freq_positive, input_mag_q, 'b-', alpha=0.7, linewidth=1.5, label='Input')
+    ax12.plot(freq_positive, output_mag_q, 'r-', alpha=0.7, linewidth=1.5, label='Output')
+    ax12.set_title('Q Channel Comparison (Freq)', fontsize=11, fontweight='bold')
+    ax12.set_xlabel('Frequency (normalized)')
+    ax12.set_ylabel('Magnitude (dB)')
+    ax12.legend(loc='upper right', fontsize=8)
+    ax12.grid(True, alpha=0.3)
+    ax12.set_xlim(0, filt.fs/2)
     
     # Add overall title
-    fig.suptitle('Elliptical IIR Filter Visualization\n' + 
+    fig.suptitle('Elliptical IIR Filter Visualization (Time & Frequency Domain)\n' + 
                  f'Order={filt.order}, Rp={filt.rp}dB, Rs={filt.rs}dB, Wp={filt.wp}',
-                 fontsize=14, fontweight='bold', y=0.995)
+                 fontsize=14, fontweight='bold', y=0.997)
     
     plt.tight_layout(rect=[0, 0, 1, 0.99])
     
