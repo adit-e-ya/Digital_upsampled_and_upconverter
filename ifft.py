@@ -25,7 +25,7 @@ from fft import bin_to_int, half_round_up, approx_0_7071
 
 def twiddle_multiply_w8_minus1(data_real, data_imag):
     """
-    Multiply by W_8^(-1) = e^(j*2*pi/8) = cos(pi/4) + j*sin(pi/4) = 0.7071 + j*0.7071
+    Multiply by W_8^(-1) = e^(j*2*pi*(-1)/8) = e^(j*pi/4) = cos(pi/4) + j*sin(pi/4) = 0.7071 + j*0.7071
     
     This is the conjugate of W_8^1 used in FFT.
     (a + jb) * (0.7071 + j*0.7071) = 0.7071*(a - b) + j*0.7071*(a + b)
@@ -71,7 +71,7 @@ def twiddle_multiply_w8_minus2(real, imag):
 
 def twiddle_multiply_w8_minus3(real, imag):
     """
-    Multiply by W_8^(-3) = e^(j*3*pi/4) = cos(3*pi/4) + j*sin(3*pi/4) = -0.7071 + j*0.7071
+    Multiply by W_8^(-3) = e^(j*2*pi*(-3)/8) = e^(j*3*pi/4) = cos(3*pi/4) + j*sin(3*pi/4) = -0.7071 + j*0.7071
     
     This is the conjugate of W_8^3 used in FFT.
     (a + jb) * (-0.7071 + j*0.7071) = 0.7071*(-a - b) + j*0.7071*(a - b)
@@ -102,7 +102,10 @@ def ifft_8point_hardware(input_i_binary_list, input_q_binary_list):
     - Bit-reversed input ordering
     - Hardware-style conjugate twiddle factor approximation
     - Scaling by 1/8 at the output (right shift by 3 bits)
-    - (Not implemented) Proper bit-width expansion at each stage
+    
+    Note: Bit-width expansion at each stage is not explicitly implemented in this
+    simulation, similar to the FFT implementation. The actual hardware would expand
+    from 14->15->16->17 bits through the stages to prevent overflow.
     
     The IFFT is implemented using the relationship:
     IFFT = (1/N) * conjugate(FFT(conjugate(input)))
@@ -311,9 +314,11 @@ def ifft_compare_demo(seed=0, scale=4096, tolerance_pct=0, bit_width=14):
     time_imag_bin = [int_to_bin(int(v), bit_width) for v in time_imag]
     
     # FFT then IFFT
+    # FFT output is 17-bit (expanded from 14-bit input through 3 stages)
+    FFT_OUTPUT_BITS = 17
     fft_real, fft_imag = fft_8point_hardware(time_real_bin, time_imag_bin)
-    fft_real_bin = [int_to_bin(int(v), 17) for v in fft_real]
-    fft_imag_bin = [int_to_bin(int(v), 17) for v in fft_imag]
+    fft_real_bin = [int_to_bin(int(v), FFT_OUTPUT_BITS) for v in fft_real]
+    fft_imag_bin = [int_to_bin(int(v), FFT_OUTPUT_BITS) for v in fft_imag]
     
     ifft_real, ifft_imag = ifft_8point_hardware(fft_real_bin, fft_imag_bin)
     
@@ -323,13 +328,15 @@ def ifft_compare_demo(seed=0, scale=4096, tolerance_pct=0, bit_width=14):
     print(f"                 Imag={ifft_imag}")
     
     # Calculate round-trip error
+    # Allow small rounding errors due to hardware approximations in twiddle factors
+    ROUND_TRIP_ERROR_TOLERANCE = 5  # Maximum acceptable error in integer units
     round_trip_pass = True
     max_error = 0
     for idx in range(8):
         err_real = abs(time_real[idx] - ifft_real[idx])
         err_imag = abs(time_imag[idx] - ifft_imag[idx])
         max_error = max(max_error, err_real, err_imag)
-        if err_real > 5 or err_imag > 5:  # Allow small rounding errors
+        if err_real > ROUND_TRIP_ERROR_TOLERANCE or err_imag > ROUND_TRIP_ERROR_TOLERANCE:
             round_trip_pass = False
     
     print(f"Round-trip max error: {max_error}")
