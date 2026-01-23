@@ -2,6 +2,7 @@
 FFT-Based Signal Processing Pipeline with AWGN Channel & Spectral Analysis
 - 6-stage cascaded upsampling using 8-point FFT-based digital upconversion
 - 14-bit fixed-point quantization (12-bit fractional width)
+- 16-point FFT-based upconversion after filtering
 - AWGN channel simulation
 - Frequency domain spectral analysis
 """
@@ -10,6 +11,9 @@ import numpy as np
 from scipy import signal
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
+from input_gen import int_to_bin, float_to_fixed_binary
+from fft import bin_to_int
+from upconverter_16 import upconverter_16
 
 # ============================================================================
 # SYSTEM PARAMETERS
@@ -175,6 +179,46 @@ def digital_upconverter_fft8(xi, xq):
     # IFFT
     xi_up = np.fft.ifft(Xi_shifted).real[:n_input]
     xq_up = np.fft.ifft(Xq_shifted).real[:n_input]
+    
+    return xi_up, xq_up
+
+
+def digital_upconverter_16point_hardware(xi, xq, shift=1):
+    """
+    Digital upconverter using 16-point hardware FFT/IFFT.
+    Performs frequency domain upconversion via hardware-accurate FFT processing.
+    
+    Parameters:
+    -----------
+    xi, xq : arrays
+        I and Q components (floating point values in range -1 to 1)
+    shift : int
+        Spectral shift amount (default: 1)
+    
+    Returns:
+    --------
+    xi_up, xq_up : upconverted I/Q components
+    """
+    n_input = len(xi)
+    
+    # Pad to multiple of 16
+    pad_length = ((n_input + 15) // 16) * 16
+    xi_padded = np.zeros(pad_length)
+    xq_padded = np.zeros(pad_length)
+    xi_padded[:n_input] = xi
+    xq_padded[:n_input] = xq
+    
+    # Convert to 14-bit fixed-point binary representation
+    xi_binary = float_to_fixed_binary(xi_padded, total_bits=14, frac_bits=13)
+    xq_binary = float_to_fixed_binary(xq_padded, total_bits=14, frac_bits=13)
+    
+    # Apply hardware upconverter
+    ifft_real, ifft_imag = upconverter_16(xi_binary, xq_binary, shift)
+    
+    # Convert back to floating point
+    scale_factor = 2 ** 13
+    xi_up = np.array(ifft_real[:n_input]) / scale_factor
+    xq_up = np.array(ifft_imag[:n_input]) / scale_factor
     
     return xi_up, xq_up
 
@@ -347,19 +391,22 @@ def compute_spectrum(xi, xq, fs_effective):
     return freqs, magnitude_db, fft_size
 
 
-def plot_spectral_analysis(stage_outputs, snr_db=20):
+def plot_spectral_analysis(stage_outputs, upconv_outputs, snr_db=20):
     """
-    Plot frequency spectra at each stage and after channel simulation.
+    Plot frequency spectra at each stage, after 16-bit upconversion, and after channel simulation.
     
     Parameters:
     -----------
     stage_outputs : list
-        List of (xi, xq) tuples at each stage
+        List of (xi, xq) tuples at each upsampling stage
+    upconv_outputs : list
+        List of (xi, xq) tuples after 16-bit upconversion and filtering
     snr_db : float
         SNR level for channel simulation
     """
     num_stages = len(stage_outputs) - 1
-    n_plots = num_stages + 2  # Each stage + before/after comparison
+    num_upconv_stages = len(upconv_outputs)
+    n_plots = len(stage_outputs) + num_upconv_stages + 2  # All stages + upconv stages + AWGN + comparison
     
     # Create figure with subplots
     fig, axes = plt.subplots(n_plots, 1, figsize=(14, 4 * n_plots))
@@ -370,7 +417,7 @@ def plot_spectral_analysis(stage_outputs, snr_db=20):
     
     fs_values = [FS * (2 ** i) for i in range(num_stages + 1)]
     
-    # Plot spectra for each stage
+    # Plot spectra for each upsampling stage
     for stage in range(len(stage_outputs)):
         xi, xq = stage_outputs[stage]
         freqs, magnitude_db, fft_size = compute_spectrum(xi, xq, fs_values[stage])
@@ -378,17 +425,30 @@ def plot_spectral_analysis(stage_outputs, snr_db=20):
         # Plot one-sided spectrum
         one_sided_idx = freqs >= 0
         axes[stage].plot(freqs[one_sided_idx] / 1e6, magnitude_db[one_sided_idx], 'b-', linewidth=0.8)
-        axes[stage].set_title(f'Stage {stage}: Input size = {len(xi)} samples, Fs = {fs_values[stage]/1e6:.1f} MHz', fontsize=11, fontweight='bold')
+        axes[stage].set_title(f'Upsampling Stage {stage}: Input size = {len(xi)} samples, Fs = {fs_values[stage]/1e6:.1f} MHz', fontsize=11, fontweight='bold')
         axes[stage].set_ylabel('Magnitude (dB)', fontsize=10)
         axes[stage].grid(True, alpha=0.3)
         axes[stage].set_xlim([0, fs_values[stage] / 2 / 1e6])
     
+    # Plot spectra for 16-bit upconversion stages
+    stage_offset = len(stage_outputs)
+    for idx, (xi, xq) in enumerate(upconv_outputs):
+        freqs, magnitude_db, fft_size = compute_spectrum(xi, xq, fs_values[-1])
+        
+        one_sided_idx = freqs >= 0
+        axes[stage_offset + idx].plot(freqs[one_sided_idx] / 1e6, magnitude_db[one_sided_idx], 'g-', linewidth=0.8)
+        title = f'After 16-bit Upconversion' if idx == 0 else f'After Filter Pass {idx}'
+        axes[stage_offset + idx].set_title(f'{title}: size = {len(xi)} samples, Fs = {fs_values[-1]/1e6:.1f} MHz', fontsize=11, fontweight='bold')
+        axes[stage_offset + idx].set_ylabel('Magnitude (dB)', fontsize=10)
+        axes[stage_offset + idx].grid(True, alpha=0.3)
+        axes[stage_offset + idx].set_xlim([0, fs_values[-1] / 2 / 1e6])
+    
     # Plot after AWGN channel
-    xi_final, xq_final = stage_outputs[-1]
+    xi_final, xq_final = upconv_outputs[-1]
     xi_noisy, xq_noisy = add_awgn_noise(xi_final, xq_final, snr_db=snr_db)
     freqs, magnitude_db_noisy, _ = compute_spectrum(xi_noisy, xq_noisy, fs_values[-1])
     
-    stage_idx = num_stages
+    stage_idx = stage_offset + num_upconv_stages
     one_sided_idx = freqs >= 0
     axes[stage_idx].plot(freqs[one_sided_idx] / 1e6, magnitude_db_noisy[one_sided_idx], 'r-', linewidth=0.8, label=f'SNR = {snr_db} dB')
     axes[stage_idx].set_title(f'After AWGN Channel (SNR = {snr_db} dB)', fontsize=11, fontweight='bold')
@@ -399,11 +459,11 @@ def plot_spectral_analysis(stage_outputs, snr_db=20):
     axes[stage_idx].legend(fontsize=10)
     
     # Before and After comparison
-    xi_final_clean = stage_outputs[-1][0]
-    xq_final_clean = stage_outputs[-1][1]
+    xi_final_clean = upconv_outputs[-1][0]
+    xq_final_clean = upconv_outputs[-1][1]
     freqs_clean, magnitude_db_clean, _ = compute_spectrum(xi_final_clean, xq_final_clean, fs_values[-1])
     
-    stage_idx = num_stages + 1
+    stage_idx = stage_offset + num_upconv_stages + 1
     one_sided_idx = freqs_clean >= 0
     axes[stage_idx].plot(freqs_clean[one_sided_idx] / 1e6, magnitude_db_clean[one_sided_idx], 'b-', linewidth=0.8, label='Before Channel')
     axes[stage_idx].plot(freqs[one_sided_idx] / 1e6, magnitude_db_noisy[one_sided_idx], 'r-', linewidth=0.8, label=f'After AWGN ({snr_db} dB)')
@@ -415,7 +475,7 @@ def plot_spectral_analysis(stage_outputs, snr_db=20):
     axes[stage_idx].legend(fontsize=10)
     
     plt.tight_layout()
-    plt.savefig('/Users/aditeyasrivastava/Documents/iit delhi/Sem6/ELS/python_sim/spectral_analysis.png', dpi=150, bbox_inches='tight')
+    plt.savefig('spectral_analysis.png', dpi=150, bbox_inches='tight')
     print("Spectral analysis plot saved: spectral_analysis.png")
     plt.show()
 
@@ -444,16 +504,51 @@ def main():
     print(f"    Final output I range: [{xi_final.min():.4f}, {xi_final.max():.4f}]")
     print(f"    Final output Q range: [{xq_final.min():.4f}, {xq_final.max():.4f}]")
     
-    # Step 3: AWGN channel simulation at multiple SNR levels
-    print("\n[3] Simulating AWGN channel at multiple SNR levels...")
+    # Step 3: 16-bit upconversion on upsampled and filtered signal
+    print("\n[3] Applying 16-point hardware FFT-based upconversion...")
+    xi_upconv, xq_upconv = digital_upconverter_16point_hardware(xi_final, xq_final, shift=1)
+    print(f"    After 16-bit upconversion: size = {len(xi_upconv)} samples")
+    print(f"    I range: [{xi_upconv.min():.4f}, {xi_upconv.max():.4f}]")
+    print(f"    Q range: [{xq_upconv.min():.4f}, {xq_upconv.max():.4f}]")
+    
+    # Step 4: Pass through filter again
+    print("\n[4] Passing through elliptic IIR filter again...")
+    filter_order = 6
+    b, a = signal.ellip(filter_order, 0.5, 50, 0.4)
+    
+    if len(xi_upconv) > 2 * len(b):
+        xi_filtered = signal.filtfilt(b, a, xi_upconv)
+        xq_filtered = signal.filtfilt(b, a, xq_upconv)
+    else:
+        xi_filtered = signal.lfilter(b, a, xi_upconv)
+        xq_filtered = signal.lfilter(b, a, xq_upconv)
+    
+    # Quantize to 14-bit fixed-point
+    xi_filtered = np.clip(xi_filtered, -1, 1)
+    xq_filtered = np.clip(xq_filtered, -1, 1)
+    xi_filtered = np.round(xi_filtered * Q_FACTOR) / Q_FACTOR
+    xq_filtered = np.round(xq_filtered * Q_FACTOR) / Q_FACTOR
+    
+    print(f"    After filtering: size = {len(xi_filtered)} samples")
+    print(f"    I range: [{xi_filtered.min():.4f}, {xi_filtered.max():.4f}]")
+    print(f"    Q range: [{xq_filtered.min():.4f}, {xq_filtered.max():.4f}]")
+    
+    # Store upconversion outputs for visualization
+    upconv_outputs = [
+        (xi_upconv.copy(), xq_upconv.copy()),
+        (xi_filtered.copy(), xq_filtered.copy())
+    ]
+    
+    # Step 5: AWGN channel simulation at multiple SNR levels
+    print("\n[5] Simulating AWGN channel at multiple SNR levels...")
     snr_levels = [10, 20, 30]
     for snr in snr_levels:
-        xi_noisy, xq_noisy = add_awgn_noise(xi_final, xq_final, snr_db=snr)
-        print(f"    SNR = {snr} dB: Signal power = {np.mean(xi_final**2 + xq_final**2):.6f}, Noise power = {np.mean((xi_noisy - xi_final)**2 + (xq_noisy - xq_final)**2):.6f}")
+        xi_noisy, xq_noisy = add_awgn_noise(xi_filtered, xq_filtered, snr_db=snr)
+        print(f"    SNR = {snr} dB: Signal power = {np.mean(xi_filtered**2 + xq_filtered**2):.6f}, Noise power = {np.mean((xi_noisy - xi_filtered)**2 + (xq_noisy - xq_filtered)**2):.6f}")
     
-    # Step 4: Spectral analysis and visualization
-    print("\n[4] Computing spectral analysis at each stage...")
-    plot_spectral_analysis(stage_outputs, snr_db=20)
+    # Step 6: Spectral analysis and visualization
+    print("\n[6] Computing spectral analysis at each stage...")
+    plot_spectral_analysis(stage_outputs, upconv_outputs, snr_db=20)
     
     print("\n" + "=" * 70)
     print("Simulation Complete!")
