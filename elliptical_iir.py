@@ -170,7 +170,7 @@ class FixedElliptical:
         
         return real_out, imag_out
     
-    def process(self, input_real, input_imag):
+    def process(self, input_real, input_imag, use_float=False):
         """
         Process arrays of real and imaginary samples.
         
@@ -180,19 +180,39 @@ class FixedElliptical:
             List of real samples (integers or binary strings)
         input_imag : list of int or list of str
             List of imaginary samples (integers or binary strings)
+        use_float : bool
+            If True, use scipy's floating-point filter (more accurate).
+            If False, use fixed-point implementation (for hardware simulation).
         
         Returns
         -------
         tuple
             (output_real, output_imag) - Two lists of filtered integer samples
         """
-        output_real = []
-        output_imag = []
-        
-        for r, im in zip(input_real, input_imag):
-            r_out, im_out = self.process_sample(r, im)
-            output_real.append(r_out)
-            output_imag.append(im_out)
+        if use_float:
+            # Use scipy's floating-point filter for accuracy
+            # Convert inputs to numpy arrays
+            real_arr = np.array([self._binary_to_int(x) if isinstance(x, str) else x 
+                                for x in input_real], dtype=float)
+            imag_arr = np.array([self._binary_to_int(x) if isinstance(x, str) else x 
+                                for x in input_imag], dtype=float)
+            
+            # Apply scipy filter
+            output_real_float = signal.sosfilt(self.sos_float, real_arr)
+            output_imag_float = signal.sosfilt(self.sos_float, imag_arr)
+            
+            # Convert back to integers
+            output_real = [int(round(x)) for x in output_real_float]
+            output_imag = [int(round(x)) for x in output_imag_float]
+        else:
+            # Use fixed-point implementation
+            output_real = []
+            output_imag = []
+            
+            for r, im in zip(input_real, input_imag):
+                r_out, im_out = self.process_sample(r, im)
+                output_real.append(r_out)
+                output_imag.append(im_out)
         
         return output_real, output_imag
     
